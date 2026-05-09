@@ -506,20 +506,16 @@ EOF
     run_root systemctl daemon-reload
     run_root systemctl enable --now "$CF_SERVICE_NAME"
   else
-    run_root tee "/etc/init.d/${CF_SERVICE_NAME}" >/dev/null <<'EOF'
+    run_root tee "/etc/init.d/${CF_SERVICE_NAME}" >/dev/null <<EOF
 #!/sbin/openrc-run
-name="cloudflared-nat-cfws"
+name="${CF_SERVICE_NAME}"
 description="Cloudflare Tunnel for NAT CFWS"
-command="/usr/local/bin/cloudflared"
-command_args="tunnel run --token ${TUNNEL_TOKEN}"
+command="${DEFAULT_CLOUDFLARED_BIN}"
+command_args="tunnel run --token-file ${DEFAULT_CLOUDFLARED_ENV}"
 command_background="true"
-pidfile="/run/cloudflared-nat-cfws.pid"
-output_log="/var/log/nat-cfws/cloudflared.log"
-error_log="/var/log/nat-cfws/cloudflared.err"
-start_pre() {
-  . /etc/default/cloudflared-nat-cfws
-  export TUNNEL_TOKEN
-}
+pidfile="/run/${CF_SERVICE_NAME}.pid"
+output_log="${DEFAULT_LOG_DIR}/cloudflared.log"
+error_log="${DEFAULT_LOG_DIR}/cloudflared.err"
 depend() {
   need net
   after xray
