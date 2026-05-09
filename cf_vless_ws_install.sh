@@ -539,11 +539,15 @@ verify_cloudflared() {
   if [ "$INIT_SYSTEM" = "systemd" ]; then
     run_root systemctl is-active --quiet "$CF_SERVICE_NAME" || {
       run_root systemctl status "$CF_SERVICE_NAME" --no-pager || true
+      [ -f "${DEFAULT_LOG_DIR}/cloudflared.log" ] && tail -n 50 "${DEFAULT_LOG_DIR}/cloudflared.log" || true
+      [ -f "${DEFAULT_LOG_DIR}/cloudflared.err" ] && tail -n 50 "${DEFAULT_LOG_DIR}/cloudflared.err" || true
       fail "cloudflared 服务未正常运行"
     }
   else
     run_root rc-service "$CF_SERVICE_NAME" status >/dev/null 2>&1 || {
       run_root rc-service "$CF_SERVICE_NAME" status || true
+      [ -f "${DEFAULT_LOG_DIR}/cloudflared.log" ] && tail -n 50 "${DEFAULT_LOG_DIR}/cloudflared.log" || true
+      [ -f "${DEFAULT_LOG_DIR}/cloudflared.err" ] && tail -n 50 "${DEFAULT_LOG_DIR}/cloudflared.err" || true
       fail "cloudflared 服务未正常运行"
     }
   fi
