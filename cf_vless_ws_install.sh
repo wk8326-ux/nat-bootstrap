@@ -149,6 +149,7 @@ prompt_required() {
 
   while true; do
     if [ "$secret_mode" = "1" ]; then
+      printf '[INFO] Token 输入为隐藏模式；终端不会回显，这是正常的。支持直接粘贴后回车。\n'
       read -r -s -p "$prompt_text: " current_value
       printf '\n'
     else
@@ -406,16 +407,16 @@ EOF
     run_root systemctl daemon-reload
     run_root systemctl enable --now "$XRAY_SERVICE_NAME"
   else
-    run_root tee /etc/init.d/xray >/dev/null <<'EOF'
+    run_root tee /etc/init.d/xray >/dev/null <<EOF
 #!/sbin/openrc-run
 name="xray"
 description="Xray Service"
-command="/usr/local/xray/xray"
-command_args="run -config /usr/local/etc/xray/config.json"
+command="${DEFAULT_XRAY_BIN}"
+command_args="run -config ${DEFAULT_XRAY_CONFIG}"
 command_background="true"
 pidfile="/run/xray.pid"
-output_log="/var/log/nat-cfws/xray.log"
-error_log="/var/log/nat-cfws/xray.err"
+output_log="${DEFAULT_LOG_DIR}/xray.log"
+error_log="${DEFAULT_LOG_DIR}/xray.err"
 depend() {
   need net
 }
