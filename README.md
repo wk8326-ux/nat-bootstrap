@@ -23,7 +23,22 @@ bash <(curl -fsSL https://raw.githubusercontent.com/wk8326-ux/nat-bootstrap/main
 - VLESS + WS
 - Cloudflare Tunnel outbound connection
 
-## Requirements
+## Other tools
+
+Interactive process inspector / killer for NAT or lightweight VPS:
+
+```bash
+python3 proc_guard.py
+```
+
+Features:
+
+- list current processes with index numbers
+- explain common NAT/VPS processes in plain Chinese
+- highlight keep / temporary / unknown processes
+- choose indexes to send `SIGTERM` or `SIGKILL`
+- suitable for quickly cleaning unrelated processes on small nodes
+
 
 Prepare first:
 
