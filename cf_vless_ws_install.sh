@@ -571,8 +571,10 @@ verify_cloudflared() {
 
   if [ -f "$err_file" ]; then
     if tail -n 80 "$err_file" | grep -Eq 'Provided Tunnel token is not valid|failed to authenticate|401 Unauthorized'; then
-      tail -n 80 "$err_file" || true
-      fail "cloudflared token 无效或认证失败"
+      if [ "$verify_ok" != "1" ]; then
+        tail -n 80 "$err_file" || true
+        fail "cloudflared token 无效或认证失败"
+      fi
     fi
   fi
 
