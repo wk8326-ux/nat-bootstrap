@@ -549,28 +549,52 @@ EOF
 
 verify_cloudflared() {
   section "验证 Cloudflare Tunnel"
+  local log_file err_file verify_ok status_ok
+  log_file="${DEFAULT_LOG_DIR}/cloudflared.log"
+  err_file="${DEFAULT_LOG_DIR}/cloudflared.err"
+  verify_ok="0"
+  status_ok="0"
+
   sleep 4
+
   if [ "$INIT_SYSTEM" = "systemd" ]; then
-    run_root systemctl is-active --quiet "$CF_SERVICE_NAME" || {
-      run_root systemctl status "$CF_SERVICE_NAME" --no-pager || true
-      [ -f "${DEFAULT_LOG_DIR}/cloudflared.log" ] && tail -n 50 "${DEFAULT_LOG_DIR}/cloudflared.log" || true
-      [ -f "${DEFAULT_LOG_DIR}/cloudflared.err" ] && tail -n 50 "${DEFAULT_LOG_DIR}/cloudflared.err" || true
-      fail "cloudflared 服务未正常运行"
-    }
+    run_root systemctl is-active --quiet "$CF_SERVICE_NAME" && status_ok="1"
   else
-    run_root rc-service "$CF_SERVICE_NAME" status >/dev/null 2>&1 || {
+    run_root rc-service "$CF_SERVICE_NAME" status >/dev/null 2>&1 && status_ok="1"
+  fi
+
+  if [ -f "$log_file" ]; then
+    if tail -n 120 "$log_file" | grep -Eq 'Registered tunnel connection|Updated to new configuration'; then
+      verify_ok="1"
+    fi
+  fi
+
+  if [ -f "$err_file" ]; then
+    if tail -n 80 "$err_file" | grep -Eq 'Provided Tunnel token is not valid|failed to authenticate|401 Unauthorized'; then
+      tail -n 80 "$err_file" || true
+      fail "cloudflared token 无效或认证失败"
+    fi
+  fi
+
+  if [ "$verify_ok" = "0" ] && [ "$status_ok" = "0" ]; then
+    if [ "$INIT_SYSTEM" = "systemd" ]; then
+      run_root systemctl status "$CF_SERVICE_NAME" --no-pager || true
+    else
       run_root rc-service "$CF_SERVICE_NAME" status || true
-      [ -f "${DEFAULT_LOG_DIR}/cloudflared.log" ] && tail -n 50 "${DEFAULT_LOG_DIR}/cloudflared.log" || true
-      [ -f "${DEFAULT_LOG_DIR}/cloudflared.err" ] && tail -n 50 "${DEFAULT_LOG_DIR}/cloudflared.err" || true
-      fail "cloudflared 服务未正常运行"
-    }
+    fi
+    [ -f "$log_file" ] && tail -n 80 "$log_file" || true
+    [ -f "$err_file" ] && tail -n 80 "$err_file" || true
+    fail "cloudflared 服务未正常运行"
   fi
 
-  if [ -f "${DEFAULT_LOG_DIR}/cloudflared.log" ]; then
-    tail -n 20 "${DEFAULT_LOG_DIR}/cloudflared.log" || true
-  fi
+  [ -f "$log_file" ] && tail -n 30 "$log_file" || true
+  [ -f "$err_file" ] && tail -n 30 "$err_file" || true
 
-  ok "cloudflared 进程已运行"
+  if [ "$verify_ok" = "1" ]; then
+    ok "cloudflared 已成功建立 Tunnel 连接"
+  else
+    ok "cloudflared 进程已运行"
+  fi
 }
 
 print_summary() {
