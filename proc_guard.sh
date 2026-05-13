@@ -50,6 +50,11 @@ clip() {
 build_rows_full() {
   ps -eo pid=,ppid=,user=,comm=,rss=,etime=,args= > "$RAW"
   awk -v me="$$" '
+    function join_from(start,   i, out) {
+      out = ""
+      for (i = start; i <= NF; i++) out = out (i == start ? "" : " ") $i
+      return out
+    }
     function is_noise(comm, args) {
       if (comm ~ /^\[.*\]$/) return 1
       if (comm ~ /^(systemd|init|openrc-init|agetty|dbus-daemon|rsyslogd|cron|crond|sshd)$/) return 1
@@ -77,9 +82,7 @@ build_rows_full() {
       return level "|" note
     }
     NF >= 7 {
-      pid=$1; ppid=$2; user=$3; comm=$4; rss=$5; etime=$6
-      args=""
-      for (i=7;i<=NF;i++) args = args (i==7?"":" ") $i
+      pid=$1; ppid=$2; user=$3; comm=$4; rss=$5; etime=$6; args=join_from(7)
       if (pid == me) next
       if (is_noise(comm, args)) next
       info = classify(comm, args)
