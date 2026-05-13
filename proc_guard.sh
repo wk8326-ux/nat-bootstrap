@@ -7,23 +7,27 @@ case "$LIMIT" in
 esac
 [ "$LIMIT" -ge 1 ] 2>/dev/null || LIMIT=12
 
-PS_CMD="ps -eo pid=,ppid=,user=,comm=,%cpu=,%mem=,rss=,etime=,args="
-if ! ps -eo pid= >/dev/null 2>&1; then
-  PS_CMD="ps w"
-fi
-
 TMP_BASE="${TMPDIR:-/tmp}/proc_guard.$$"
 RAW="$TMP_BASE.raw"
 ROWS="$TMP_BASE.rows"
 MAP="$TMP_BASE.map"
 trap 'rm -f "$RAW" "$ROWS" "$MAP"' EXIT INT TERM
 
-have_cmd() {
-  command -v "$1" >/dev/null 2>&1
+pick_ps_mode() {
+  if ps -eo pid=,ppid=,user=,comm=,rss=,etime=,args= >/dev/null 2>&1; then
+    echo full
+  elif ps w >/dev/null 2>&1; then
+    echo busybox
+  else
+    echo plain
+  fi
 }
+
+PS_MODE="$(pick_ps_mode)"
 
 fmt_mem() {
   kb="$1"
+  case "$kb" in ''|*[!0-9]*) kb=0 ;; esac
   if [ "$kb" -ge 1048576 ] 2>/dev/null; then
     awk -v v="$kb" 'BEGIN{printf "%.2fG", v/1024/1024}'
   elif [ "$kb" -ge 1024 ] 2>/dev/null; then
@@ -43,18 +47,17 @@ clip() {
     }'
 }
 
-build_rows() {
-  eval "$PS_CMD" > "$RAW"
+build_rows_full() {
+  ps -eo pid=,ppid=,user=,comm=,rss=,etime=,args= > "$RAW"
   awk -v me="$$" '
-    function is_noise(comm, args, merged) {
-      merged = comm " " args
+    function is_noise(comm, args) {
       if (comm ~ /^\[.*\]$/) return 1
       if (comm ~ /^(systemd|init|openrc-init|agetty|dbus-daemon|rsyslogd|cron|crond|sshd)$/) return 1
       if (comm ~ /^systemd-(journal|logind|network|resolve|timesyn|udevd)/) return 1
       if (comm ~ /^(login|getty)$/) return 1
-      if (comm ~ /^(ksoftirqd|rcu_|migration|kworker|watchdog|oom_reaper|mm_percpu_wq|kthreadd|idle_inject|cpuhp|kdevtmpfs|jbd2|kauditd|khungtaskd|kcompactd|ksmd|khugepaged|kintegrityd|kblockd|blkcg_punt_bio|ata_sff|md|edac-poller|devfreq_wq|kswapd|ecryptfs-kthread|kthrotld|acpi_thermal_pm|scsi_eh_|scsi_tmf_|ipv6_addrconf|kstrp|zswap-shrink|charger_manager|mld|kpsmoused|ttm_swap|oom_reaper|writeback|kdmflush|kcryptd|dmcrypt_write|kaluad|nfit|crypto|kintegrityd|uas|nvme|loop|card|cfg80211|bluetooth|mld|iprt-|psimon)/) return 1
+      if (comm ~ /^(ksoftirqd|rcu_|migration|kworker|watchdog|oom_reaper|mm_percpu_wq|kthreadd|idle_inject|cpuhp|kdevtmpfs|jbd2|kauditd|khungtaskd|kcompactd|ksmd|khugepaged|kintegrityd|kblockd|blkcg_punt_bio|ata_sff|md|edac-poller|devfreq_wq|kswapd|ecryptfs-kthread|kthrotld|acpi_thermal_pm|scsi_eh_|scsi_tmf_|ipv6_addrconf|kstrp|zswap-shrink|charger_manager|mld|kpsmoused|ttm_swap|writeback|kdmflush|kcryptd|dmcrypt_write|kaluad|nfit|crypto|uas|nvme|loop|card|cfg80211|bluetooth|iprt-|psimon|pool_workqueue|irq\/)/) return 1
       if (comm ~ /^(ps|awk|sort|head|sed|grep|cut|tr|printf|sleep|sh)$/ && args ~ /proc_guard/) return 1
-      if (comm ~ /^(fwupd|udisksd|upowerd|polkitd|rpcbind|fail2ban-server|zerotier-one|syncthing|unattended-upgr)$/) return 1
+      if (comm ~ /^(fwupd|udisksd|upowerd|polkitd|rpcbind|rpc\.idmapd|rpc\.statd|rpc\.mountd|blkmapd|nfsdcld|fsidd|fail2ban-server|zerotier-one|syncthing|unattended-upgr)$/) return 1
       return 0
     }
     function classify(comm, args, low, level, note) {
@@ -73,17 +76,67 @@ build_rows() {
       }
       return level "|" note
     }
-    NF >= 9 {
-      pid=$1; ppid=$2; user=$3; comm=$4; pcpu=$5; pmem=$6; rss=$7; etime=$8
+    NF >= 7 {
+      pid=$1; ppid=$2; user=$3; comm=$4; rss=$5; etime=$6
       args=""
-      for (i=9;i<=NF;i++) args = args (i==9?"":" ") $i
+      for (i=7;i<=NF;i++) args = args (i==7?"":" ") $i
       if (pid == me) next
       if (is_noise(comm, args)) next
       info = classify(comm, args)
       split(info, arr, "|")
-      printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", pid, ppid, user, comm, pcpu, pmem, rss, etime, args, arr[1] "\t" arr[2]
+      printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", pid, ppid, user, comm, rss, etime, args, arr[1], arr[2]
     }
-  ' "$RAW" | sort -t ' ' -k6,6nr -k5,5nr > "$ROWS"
+  ' "$RAW" | sort -t "$(printf '\t')" -k5,5nr > "$ROWS"
+}
+
+build_rows_busybox() {
+  ps w > "$RAW"
+  awk -v me="$$" '
+    function is_noise(comm, args) {
+      if (comm ~ /^\[.*\]$/) return 1
+      if (comm ~ /^(init|openrc-init|agetty|crond|sshd|login|getty)$/) return 1
+      if (comm ~ /^(ksoftirqd|rcu_|migration|kworker|watchdog|oom_reaper|mm_percpu_wq|kthreadd|idle_inject|cpuhp|kdevtmpfs|jbd2|kauditd|khungtaskd|kcompactd|ksmd|khugepaged|kintegrityd|kblockd|blkcg_punt_bio|ata_sff|md|edac-poller|devfreq_wq|kswapd|ecryptfs-kthread|kthrotld|acpi_thermal_pm|scsi_eh_|scsi_tmf_|ipv6_addrconf|kstrp|zswap-shrink|charger_manager|mld|kpsmoused|ttm_swap|writeback|kdmflush|kcryptd|dmcrypt_write|kaluad|nfit|crypto|uas|nvme|loop|card|cfg80211|bluetooth|iprt-|psimon|pool_workqueue|irq\/)/) return 1
+      if (comm ~ /^(ps|awk|sort|head|sed|grep|cut|tr|printf|sleep|sh)$/ && args ~ /proc_guard/) return 1
+      return 0
+    }
+    function classify(comm, args, low, level, note) {
+      low = tolower(args)
+      level = "可疑"
+      note = "不是系统噪音；若你不认识且长期常驻，可考虑清理。"
+      if (comm ~ /^(xray|sing-box|hysteria|tuic-server|cloudflared|nezha-agent|nodeget-agent|sockd|frpc|frps|nginx|caddy|haproxy)$/) {
+        level = "关键"
+        note = "关键服务，误杀可能导致代理、探针或入口失效。"
+      } else if (comm ~ /^(python|python3|bash|ash)$/) {
+        level = "确认"
+        note = "脚本/解释器类进程，先看完整命令再决定。"
+      } else if (low ~ /(curl |wget |scp |rsync |tar |unzip|tail |sleep )/) {
+        level = "临时"
+        note = "看起来像下载、解压、传输或调试残留。"
+      }
+      return level "|" note
+    }
+    NR > 0 && $1 ~ /^[0-9]+$/ {
+      pid=$1
+      user=$2
+      args=""
+      for (i=5;i<=NF;i++) args = args (i==5?"":" ") $i
+      comm=$5
+      gsub(/^.*\//, "", comm)
+      if (pid == me) next
+      if (is_noise(comm, args)) next
+      info = classify(comm, args)
+      split(info, arr, "|")
+      printf "%s\t-\t%s\t%s\t-\t-\t%s\t%s\t%s\n", pid, user, comm, args, arr[1], arr[2]
+    }
+  ' "$RAW" > "$ROWS"
+}
+
+build_rows() {
+  case "$PS_MODE" in
+    full) build_rows_full ;;
+    busybox) build_rows_busybox ;;
+    *) : > "$ROWS" ;;
+  esac
 }
 
 print_table() {
@@ -91,20 +144,33 @@ print_table() {
   : > "$MAP"
   printf '\n仅显示本机非系统噪音进程（偏 NAT 常见服务/残留）\n\n'
   if [ ! -s "$ROWS" ]; then
-    printf '没有发现额外常驻进程。\n\n'
+    printf '当前环境下没有抓到可展示结果。\n'
+    if [ "$PS_MODE" = "plain" ]; then
+      printf '原因：这个系统的 ps 太简陋，脚本暂时不兼容。\n\n'
+    else
+      printf '可能是当前机器确实没有额外常驻项。\n\n'
+    fi
     return
   fi
-  printf '%-4s %-6s %-4s %6s %6s %8s %-14s %-44s\n' '序号' 'PID' '标签' 'CPU%' 'MEM%' 'RSS' '进程名' '命令摘要'
-  printf '%s\n' '---------------------------------------------------------------------------------------------------'
-  while IFS='	' read -r pid ppid user comm pcpu pmem rss etime args level note; do
-    count=$((count + 1))
-    [ "$count" -le "$LIMIT" ] || break
-    rss_h="$(fmt_mem "$rss")"
-    args_short="$(clip "$args" 44)"
-    comm_short="$(clip "$comm" 14)"
-    printf '%-4s %-6s %-4s %6s %6s %8s %-14s %-44s\n' "$count" "$pid" "$level" "$pcpu" "$pmem" "$rss_h" "$comm_short" "$args_short"
-    printf '%s	%s	%s	%s	%s	%s	%s	%s	%s	%s	%s\n' "$count" "$pid" "$ppid" "$user" "$comm" "$pcpu" "$pmem" "$rss" "$etime" "$args" "$level|$note" >> "$MAP"
-  done < "$ROWS"
+  if [ "$PS_MODE" = full ]; then
+    printf '%-4s %-6s %-4s %8s %-14s %-46s\n' '序号' 'PID' '标签' 'RSS' '进程名' '命令摘要'
+    printf '%s\n' '------------------------------------------------------------------------------------------'
+    while IFS='\t' read -r pid ppid user comm rss etime args level note; do
+      count=$((count + 1))
+      [ "$count" -le "$LIMIT" ] || break
+      printf '%-4s %-6s %-4s %8s %-14s %-46s\n' "$count" "$pid" "$level" "$(fmt_mem "$rss")" "$(clip "$comm" 14)" "$(clip "$args" 46)"
+      printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$count" "$pid" "$user" "$comm" "$rss" "$etime" "$args" "$level" "$note" >> "$MAP"
+    done < "$ROWS"
+  else
+    printf '%-4s %-6s %-4s %-14s %-52s\n' '序号' 'PID' '标签' '进程名' '命令摘要'
+    printf '%s\n' '----------------------------------------------------------------------------------'
+    while IFS='\t' read -r pid ppid user comm rss etime args level note; do
+      count=$((count + 1))
+      [ "$count" -le "$LIMIT" ] || break
+      printf '%-4s %-6s %-4s %-14s %-52s\n' "$count" "$pid" "$level" "$(clip "$comm" 14)" "$(clip "$args" 52)"
+      printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$count" "$pid" "$user" "$comm" "$rss" "$etime" "$args" "$level" "$note" >> "$MAP"
+    done < "$ROWS"
+  fi
   printf '\n说明：输入序号后，会先显示完整命令与解释，再由你确认是否 kill。\n\n'
 }
 
@@ -113,19 +179,18 @@ show_details() {
     line="$(awk -F '\t' -v idx="$n" '$1==idx {print; exit}' "$MAP")"
     [ -n "$line" ] || continue
     pid="$(printf '%s' "$line" | cut -f2)"
-    comm="$(printf '%s' "$line" | cut -f5)"
-    pcpu="$(printf '%s' "$line" | cut -f6)"
-    pmem="$(printf '%s' "$line" | cut -f7)"
-    rss="$(printf '%s' "$line" | cut -f8)"
-    args="$(printf '%s' "$line" | cut -f10)"
-    extra="$(printf '%s' "$line" | cut -f11)"
-    level="${extra%%|*}"
-    note="${extra#*|}"
+    user="$(printf '%s' "$line" | cut -f3)"
+    comm="$(printf '%s' "$line" | cut -f4)"
+    rss="$(printf '%s' "$line" | cut -f5)"
+    etime="$(printf '%s' "$line" | cut -f6)"
+    args="$(printf '%s' "$line" | cut -f7)"
+    level="$(printf '%s' "$line" | cut -f8)"
+    note="$(printf '%s' "$line" | cut -f9)"
     printf '\nPID : %s\n' "$pid"
+    printf 'USER: %s\n' "$user"
     printf 'TAG : %s\n' "$level"
-    printf 'CPU : %s%%\n' "$pcpu"
-    printf 'MEM : %s%%\n' "$pmem"
-    printf 'RSS : %s\n' "$(fmt_mem "$rss")"
+    [ "$rss" != "-" ] && printf 'RSS : %s\n' "$(fmt_mem "$rss")"
+    [ "$etime" != "-" ] && printf 'UP  : %s\n' "$etime"
     printf 'COMM: %s\n' "$comm"
     printf 'CMD : %s\n' "$args"
     printf 'NOTE: %s\n' "$note"
@@ -142,9 +207,7 @@ parse_selection() {
       *-*)
         a="${token%-*}"
         b="${token#*-}"
-        case "$a$b" in
-          ''|*[!0-9]*) continue ;;
-        esac
+        case "$a$b" in ''|*[!0-9]*) continue ;; esac
         [ "$a" -le "$b" ] || { t="$a"; a="$b"; b="$t"; }
         i="$a"
         while [ "$i" -le "$b" ]; do
@@ -183,7 +246,7 @@ kill_selected() {
   [ "$confirm" = "yes" ] || { printf '已取消。\n'; return; }
   for n in $selected; do
     pid="$(awk -F '\t' -v idx="$n" '$1==idx {print $2; exit}' "$MAP")"
-    comm="$(awk -F '\t' -v idx="$n" '$1==idx {print $5; exit}' "$MAP")"
+    comm="$(awk -F '\t' -v idx="$n" '$1==idx {print $4; exit}' "$MAP")"
     [ -n "$pid" ] || continue
     if kill "-$sig" "$pid" 2>/dev/null; then
       printf '[OK] 已发送 SIG%s -> PID %s (%s)\n' "$sig" "$pid" "$comm"
@@ -196,6 +259,7 @@ kill_selected() {
 printf '说明：这是轻量 shell 版，适合 NAT/小鸡，尽量避免 Python 依赖。\n'
 printf '说明：本脚本只列当前机器内可见进程，不会扫描宿主机其它租户。\n'
 printf '说明：默认隐藏大部分系统噪音，重点看代理、探针、脚本残留。\n'
+printf '说明：当前 ps 兼容模式：%s\n' "$PS_MODE"
 
 while :; do
   build_rows
