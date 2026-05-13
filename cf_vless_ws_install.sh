@@ -167,11 +167,17 @@ prompt_required() {
 normalize_inputs() {
   NODE_NAME="$(printf '%s' "$NODE_NAME" | sed 's/^ *//;s/ *$//')"
   CF_HOST="$(printf '%s' "$CF_HOST" | sed 's/^ *//;s/ *$//')"
+  CF_TUNNEL_TOKEN="$(printf '%s' "$CF_TUNNEL_TOKEN" | tr -d '\r' | sed 's/^ *//;s/ *$//')"
   case "$WS_PATH" in
     "") WS_PATH='/' ;;
     /*) ;;
     *) WS_PATH="/$WS_PATH" ;;
   esac
+}
+
+validate_cloudflare_token() {
+  [ -n "$CF_TUNNEL_TOKEN" ] || fail "Cloudflare Tunnel Token 不能为空"
+  printf '%s' "$CF_TUNNEL_TOKEN" | grep -q '^eyJ' || warn "Token 看起来不像标准 Cloudflare Tunnel token；请确认复制的是 Cloudflare Tunnels -> Add a replica 里的 eyJ... 字符串"
 }
 
 ensure_uuid() {
@@ -481,7 +487,7 @@ write_cloudflared_service() {
   section "配置 Cloudflare Tunnel"
   run_root mkdir -p /etc/default /etc/cloudflared "$DEFAULT_LOG_DIR"
   run_root tee "$DEFAULT_CLOUDFLARED_ENV" >/dev/null <<EOF
-TUNNEL_TOKEN='${CF_TUNNEL_TOKEN}'
+${CF_TUNNEL_TOKEN}
 EOF
   run_root chmod 600 "$DEFAULT_CLOUDFLARED_ENV"
 
@@ -494,7 +500,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=/bin/sh -lc '. ${DEFAULT_CLOUDFLARED_ENV}; exec ${DEFAULT_CLOUDFLARED_BIN} tunnel run --token "$TUNNEL_TOKEN"'
+ExecStart=${DEFAULT_CLOUDFLARED_BIN} tunnel run --token-file ${DEFAULT_CLOUDFLARED_ENV}
 Restart=always
 RestartSec=5
 StandardOutput=append:${DEFAULT_LOG_DIR}/cloudflared.log
@@ -600,6 +606,7 @@ main() {
   prompt_required CF_HOST "CF Tunnel 绑定域名（如 hkcf.holdzywoo.top）"
   prompt_required CF_TUNNEL_TOKEN "CF Tunnel Token" 1
   normalize_inputs
+  validate_cloudflare_token
   check_host_dns_hint
   install_xray
   ensure_uuid
