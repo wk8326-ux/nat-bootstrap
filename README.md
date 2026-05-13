@@ -31,13 +31,20 @@ Interactive process inspector / killer for NAT or lightweight VPS:
 python3 proc_guard.py
 ```
 
+Show more than the default top entries:
+
+```bash
+python3 proc_guard.py 20
+```
+
 Features:
 
-- list current processes with index numbers
-- explain common NAT/VPS processes in plain Chinese
-- highlight keep / temporary / unknown processes
+- hide system noise by default
+- focus on this node's non-system processes only
+- sort by memory / CPU usage so leftovers float to the top
+- explain common proxy / probe / script processes in plain Chinese
 - choose indexes to send `SIGTERM` or `SIGKILL`
-- suitable for quickly cleaning unrelated processes on small nodes
+- suitable for spotting retry leftovers or useless resident tasks on tiny NAT nodes
 
 
 Prepare first:
