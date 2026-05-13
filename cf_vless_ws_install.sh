@@ -272,8 +272,14 @@ check_system() {
   fi
 
   if ss -lntp 2>/dev/null | grep -q ":${WS_PORT}\\b"; then
-    ss -lntp 2>/dev/null | grep ":${WS_PORT}\\b" || true
-    fail "本地端口 ${WS_PORT} 已被占用"
+    local listeners=""
+    listeners="$(ss -lntp 2>/dev/null | grep ":${WS_PORT}\\b" || true)"
+    [ -n "$listeners" ] && printf '%s\n' "$listeners"
+    if printf '%s\n' "$listeners" | grep -Eq 'users:\(\("xray"|"xray",pid='; then
+      warn "检测到 xray 已在监听 ${WS_PORT}，视为幂等重跑，继续执行"
+    else
+      fail "本地端口 ${WS_PORT} 已被非 xray 进程占用"
+    fi
   fi
 
   ok "环境检查通过"
