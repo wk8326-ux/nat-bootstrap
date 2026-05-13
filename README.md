@@ -27,22 +27,26 @@ bash <(curl -fsSL https://raw.githubusercontent.com/wk8326-ux/nat-bootstrap/main
 
 Interactive process inspector / killer for NAT or lightweight VPS:
 
+Recommended lightweight shell version:
+
 ```bash
-curl -fsSL -o proc_guard.py https://raw.githubusercontent.com/wk8326-ux/nat-bootstrap/main/proc_guard.py
-python3 proc_guard.py
+sh <(curl -fsSL https://raw.githubusercontent.com/wk8326-ux/nat-bootstrap/main/proc_guard.sh)
 ```
 
-One-line direct run:
+Or download then run:
 
 ```bash
-python3 <(curl -fsSL https://raw.githubusercontent.com/wk8326-ux/nat-bootstrap/main/proc_guard.py)
+curl -fsSL -o proc_guard.sh https://raw.githubusercontent.com/wk8326-ux/nat-bootstrap/main/proc_guard.sh
+sh proc_guard.sh
 ```
 
 Show more than the default top entries:
 
 ```bash
-python3 proc_guard.py 20
+sh proc_guard.sh 20
 ```
+
+Legacy Python version is still available if a machine already has Python 3, but NAT nodes should prefer the shell version.
 
 Features:
 
