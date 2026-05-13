@@ -52,7 +52,7 @@ build_rows() {
       if (comm ~ /^(systemd|init|openrc-init|agetty|dbus-daemon|rsyslogd|cron|crond|sshd)$/) return 1
       if (comm ~ /^systemd-(journal|logind|network|resolve|timesyn|udevd)/) return 1
       if (comm ~ /^(login|getty)$/) return 1
-      if (comm ~ /^(ksoftirqd|rcu_|migration|kworker|watchdog|oom_reaper|mm_percpu_wq|kthreadd)/) return 1
+      if (comm ~ /^(ksoftirqd|rcu_|migration|kworker|watchdog|oom_reaper|mm_percpu_wq|kthreadd|idle_inject|cpuhp|kdevtmpfs|jbd2|kauditd|khungtaskd|kcompactd|ksmd|khugepaged|kintegrityd|kblockd|blkcg_punt_bio|ata_sff|md|edac-poller|devfreq_wq|kswapd|ecryptfs-kthread|kthrotld|acpi_thermal_pm|scsi_eh_|scsi_tmf_|ipv6_addrconf|kstrp|zswap-shrink|charger_manager|mld|kpsmoused|ttm_swap|oom_reaper|writeback|kdmflush|kcryptd|dmcrypt_write|kaluad|nfit|crypto|kintegrityd|uas|nvme|loop|card|cfg80211|bluetooth|mld|iprt-|psimon)/) return 1
       if (comm ~ /^(ps|awk|sort|head|sed|grep|cut|tr|printf|sleep|sh)$/ && args ~ /proc_guard/) return 1
       if (comm ~ /^(fwupd|udisksd|upowerd|polkitd|rpcbind|fail2ban-server|zerotier-one|syncthing|unattended-upgr)$/) return 1
       return 0
