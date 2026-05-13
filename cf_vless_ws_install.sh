@@ -320,8 +320,13 @@ install_xray() {
   fi
 
   if [ "$need_install" = "1" ]; then
-    local ver arch_tag pkg_name url tmp_pkg
-    ver="$(curl -fsSL https://api.github.com/repos/XTLS/Xray-core/releases/latest | grep '"tag_name"' | head -n1 | sed -E 's/.*"([^"]+)".*/\1/')"
+    local ver arch_tag pkg_name url tmp_pkg http_code
+    ver="$(python3 - <<'PY'
+import json, urllib.request
+with urllib.request.urlopen('https://api.github.com/repos/XTLS/Xray-core/releases/latest', timeout=20) as r:
+    print(json.load(r).get('tag_name', ''))
+PY
+)"
     [ -n "$ver" ] || fail "无法获取 Xray 最新版本号"
 
     case "$ARCH" in
@@ -334,7 +339,8 @@ install_xray() {
     pkg_name="Xray-linux-${arch_tag}.zip"
     url="https://github.com/XTLS/Xray-core/releases/download/${ver}/${pkg_name}"
     tmp_pkg="/tmp/${pkg_name}"
-    curl -fL "$url" -o "$tmp_pkg"
+    http_code="$(curl -L -A 'Mozilla/5.0' -sS -o "$tmp_pkg" -w '%{http_code}' "$url" || true)"
+    [ "$http_code" = "200" ] || fail "下载 Xray 失败：${url} -> HTTP ${http_code:-unknown}"
     run_root mkdir -p "$DEFAULT_XRAY_DIR"
     run_root unzip -oq "$tmp_pkg" -d "$DEFAULT_XRAY_DIR"
     run_root chmod +x "$DEFAULT_XRAY_BIN"
