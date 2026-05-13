@@ -28,7 +28,14 @@ bash <(curl -fsSL https://raw.githubusercontent.com/wk8326-ux/nat-bootstrap/main
 Interactive process inspector / killer for NAT or lightweight VPS:
 
 ```bash
+curl -fsSL -o proc_guard.py https://raw.githubusercontent.com/wk8326-ux/nat-bootstrap/main/proc_guard.py
 python3 proc_guard.py
+```
+
+One-line direct run:
+
+```bash
+python3 <(curl -fsSL https://raw.githubusercontent.com/wk8326-ux/nat-bootstrap/main/proc_guard.py)
 ```
 
 Show more than the default top entries:

@@ -104,6 +104,7 @@ def list_procs() -> List[Proc]:
     out = sh(["ps", "-eo", "pid=,ppid=,user=,comm=,%cpu=,%mem=,rss=,etime=,args="])
     rows: List[Proc] = []
     me = os.getpid()
+    parent = os.getppid()
     for raw in out.splitlines():
         raw = raw.rstrip()
         if not raw:
@@ -113,12 +114,13 @@ def list_procs() -> List[Proc]:
             continue
         pid, ppid, user, comm, pcpu, pmem, rss, etime, args = parts
         pid_i = int(pid)
-        if pid_i == me:
+        ppid_i = int(ppid)
+        if pid_i in (me, parent):
             continue
         if is_system_noise(comm, args):
             continue
         level, note = classify(comm, args)
-        rows.append(Proc(pid_i, int(ppid), user, comm, float(pcpu), float(pmem), int(rss), etime, args, level, note))
+        rows.append(Proc(pid_i, ppid_i, user, comm, float(pcpu), float(pmem), int(rss), etime, args, level, note))
     rows.sort(key=lambda p: (-p.pmem, -p.pcpu, -p.rss_kb, p.pid))
     return rows
 
@@ -131,15 +133,38 @@ def fmt_mem(kb: int) -> str:
     return f"{kb}K"
 
 
+def clip(text: str, width: int) -> str:
+    if len(text) <= width:
+        return text.ljust(width)
+    return text[: width - 1] + "…"
+
+
 def print_view(rows: List[Proc], limit: int) -> None:
     print("\n仅显示本机非系统噪音进程（按内存/CPU占用排序）\n")
     if not rows:
         print("没有发现额外常驻进程；当前可见的基本都是系统必需进程。\n")
         return
+
+    header = f"{'序号':<4} {'PID':<6} {'标签':<4} {'CPU%':>6} {'MEM%':>6} {'RSS':>8} {'进程名':<14} {'命令摘要':<44}"
+    print(header)
+    print("-" * len(header))
     for idx, p in enumerate(rows[:limit], start=1):
-        print(f"[{idx:02d}] PID={p.pid:<6} {p.comm:<14} TAG={p.level:<4} CPU={p.pcpu:>5.1f}% MEM={p.pmem:>5.1f}% RSS={fmt_mem(p.rss_kb):>7} ETIME={p.etime}")
-        print(f"     CMD : {p.args}")
-        print(f"     NOTE: {p.note}")
+        print(f"{idx:<4} {p.pid:<6} {p.level:<4} {p.pcpu:>6.1f} {p.pmem:>6.1f} {fmt_mem(p.rss_kb):>8} {clip(p.comm, 14)} {clip(p.args, 44)}")
+    print()
+    print("说明：输入序号后，会再显示该进程的完整命令与解释，再由你确认是否 kill。\n")
+
+
+def show_details(selected: List[Proc]) -> None:
+    print("\n已选进程详情：\n")
+    for p in selected:
+        print(f"PID : {p.pid}")
+        print(f"TAG : {p.level}")
+        print(f"CPU : {p.pcpu:.1f}%")
+        print(f"MEM : {p.pmem:.1f}%")
+        print(f"RSS : {fmt_mem(p.rss_kb)}")
+        print(f"COMM: {p.comm}")
+        print(f"CMD : {p.args}")
+        print(f"NOTE: {p.note}")
         print()
 
 
@@ -169,9 +194,7 @@ def do_kill(chosen: List[Proc]) -> None:
     if not chosen:
         print("未选择任何进程。")
         return
-    print("\n准备处理这些进程：")
-    for p in chosen:
-        print(f"- PID={p.pid} COMM={p.comm} TAG={p.level} CPU={p.pcpu:.1f}% MEM={p.pmem:.1f}% CMD={p.args}")
+    show_details(chosen)
     sig = input("选择信号：15=优雅终止，9=强制杀死（默认 15）: ").strip() or "15"
     if sig not in SAFE_SIGNALS:
         print("不支持的信号。")
@@ -199,6 +222,7 @@ def main() -> int:
     if len(sys.argv) > 1 and sys.argv[1].isdigit():
         limit = max(1, int(sys.argv[1]))
 
+    print("说明：这是 Python 脚本，正确运行方式是 `python3 proc_guard.py`，不要用 bash 直接执行。")
     print("说明：本脚本只列本机进程，不会扫描宿主机其它租户。它基于当前 NAT/VPS 容器/虚机内可见的 ps 结果工作。")
     print("说明：默认隐藏系统噪音，只关注你后装服务、残留脚本、代理/探针相关进程。")
 
