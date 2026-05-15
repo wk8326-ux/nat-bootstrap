@@ -62,6 +62,7 @@ curl -fsSL -o gf_vless_reality_install.sh https://raw.githubusercontent.com/wk83
 bash gf_vless_reality_install.sh \
   --node-name GF_US01 \
   --public-host 1.2.3.4 \
+  --public-port 45231 \
   --listen-port 443 \
   --dest www.cloudflare.com:443 \
   --server-name www.cloudflare.com \
@@ -79,6 +80,7 @@ Prepare first:
 
 - a node with a reachable public IP or usable external port mapping
 - a confirmed external entry address for client import (`--public-host`)
+- if NAT mapping is used, the external mapped port for client import (`--public-port`)
 - a free listening port on the node (default `443`)
 - a valid Reality target pair: `--dest HOST:PORT` and matching `--server-name HOST`
 
@@ -86,7 +88,7 @@ Important notes:
 
 - On `systemd` hosts, the script uses the upstream Xray installer.
 - On `Alpine + OpenRC`, it automatically switches to a manual Xray install path instead of `install-release.sh`.
-- `--public-host` is only used to generate the final import link. It does not create DNS records or port forwarding for you.
+- `--public-host` and `--public-port` are only used to generate the final import link. They do not create DNS records or port forwarding for you.
 - If the machine is NAT-based, the external mapped port must really reach the node's listening port. DNS alone cannot solve high-port NAT mapping.
 - This script installs only the local `VLESS + Reality` service. It does not set up reverse proxy, CDN, Cloudflare Tunnel, panel registration, or extra routing.
 - Port conflict handling is intentionally simple:
@@ -98,7 +100,7 @@ Important notes:
 Typical use cases:
 
 - a public VPS that can listen on `443` directly
-- a NAT node whose provider gives a stable external port mapping and you plan to import the generated link manually
+- a NAT node whose provider gives a stable external port mapping and you plan to import the generated link manually or via `--public-port`
 - quick personal deployment where you want a minimal local Reality service first and will handle the surrounding infra yourself
 
 Not covered by this script:

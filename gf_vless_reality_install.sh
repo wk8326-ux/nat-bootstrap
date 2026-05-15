@@ -10,6 +10,7 @@ DEFAULT_SERVER_NAME="www.cloudflare.com"
 DEFAULT_XRAY_CONFIG="/usr/local/etc/xray/config.json"
 DEFAULT_LINK_TAG="GF_VLESS_REALITY"
 XRAY_SERVICE_NAME="xray"
+DEFAULT_PUBLIC_PORT=""
 
 NODE_NAME="${NODE_NAME:-$DEFAULT_NODE_NAME}"
 LISTEN_HOST="${LISTEN_HOST:-$DEFAULT_LISTEN_HOST}"
@@ -24,6 +25,7 @@ NON_INTERACTIVE="0"
 FORCE_STOP_PORT_HOLDER="0"
 AUTO_DISABLE_NGINX="0"
 PUBLIC_HOST="${PUBLIC_HOST:-}"
+PUBLIC_PORT="${PUBLIC_PORT:-$DEFAULT_PUBLIC_PORT}"
 
 OS_ID=""
 OS_VERSION_ID=""
@@ -61,6 +63,7 @@ usage() {
 参数:
   --node-name NAME              节点名，默认 ${DEFAULT_NODE_NAME}
   --public-host HOST            对外连接地址（公网 IP 或域名）；仅用于生成最终链接
+  --public-port PORT            对外映射端口；默认跟随本地监听端口
   --listen-port PORT            本地监听端口，默认 ${DEFAULT_LISTEN_PORT}
   --dest HOST:PORT              Reality dest，默认 ${DEFAULT_DEST}
   --server-name HOST            Reality serverNames/SNI，默认 ${DEFAULT_SERVER_NAME}
@@ -80,6 +83,7 @@ parse_args() {
     case "$1" in
       --node-name) NODE_NAME="${2:-}"; shift 2 ;;
       --public-host) PUBLIC_HOST="${2:-}"; shift 2 ;;
+      --public-port) PUBLIC_PORT="${2:-}"; shift 2 ;;
       --listen-port) LISTEN_PORT="${2:-}"; shift 2 ;;
       --dest) REALITY_DEST="${2:-}"; shift 2 ;;
       --server-name) REALITY_SERVER_NAME="${2:-}"; shift 2 ;;
@@ -190,10 +194,13 @@ prompt_required() {
 normalize_inputs() {
   NODE_NAME="$(printf '%s' "$NODE_NAME" | sed 's/^ *//;s/ *$//')"
   PUBLIC_HOST="$(printf '%s' "$PUBLIC_HOST" | sed 's/^ *//;s/ *$//')"
+  PUBLIC_PORT="$(printf '%s' "$PUBLIC_PORT" | sed 's/^ *//;s/ *$//')"
   REALITY_SERVER_NAME="$(printf '%s' "$REALITY_SERVER_NAME" | sed 's/^ *//;s/ *$//')"
   REALITY_DEST="$(printf '%s' "$REALITY_DEST" | sed 's/^ *//;s/ *$//')"
   LISTEN_PORT="$(printf '%s' "$LISTEN_PORT" | sed 's/^ *//;s/ *$//')"
+  [ -n "$PUBLIC_PORT" ] || PUBLIC_PORT="$LISTEN_PORT"
   printf '%s' "$LISTEN_PORT" | grep -Eq '^[0-9]+$' || fail "listen-port 必须是数字"
+  printf '%s' "$PUBLIC_PORT" | grep -Eq '^[0-9]+$' || fail "public-port 必须是数字"
 }
 
 check_system() {
@@ -477,11 +484,12 @@ print_summary() {
   section "交付结果"
   maybe_fill_public_host
   local link
-  link="vless://${VLESS_UUID}@${PUBLIC_HOST}:${LISTEN_PORT}?encryption=none&flow=xtls-rprx-vision&security=reality&sni=${REALITY_SERVER_NAME}&fp=chrome&pbk=${REALITY_PUBLIC_KEY}&sid=${REALITY_SHORT_ID}&type=tcp&headerType=none#${NODE_NAME}"
+  link="vless://${VLESS_UUID}@${PUBLIC_HOST}:${PUBLIC_PORT}?encryption=none&flow=xtls-rprx-vision&security=reality&sni=${REALITY_SERVER_NAME}&fp=chrome&pbk=${REALITY_PUBLIC_KEY}&sid=${REALITY_SHORT_ID}&type=tcp&headerType=none#${NODE_NAME}"
   cat <<EOF
 节点名: ${NODE_NAME}
 对外地址: ${PUBLIC_HOST}
-监听端口: ${LISTEN_PORT}
+对外端口: ${PUBLIC_PORT}
+本地监听端口: ${LISTEN_PORT}
 UUID: ${VLESS_UUID}
 Reality PrivateKey: ${REALITY_PRIVATE_KEY}
 Reality PublicKey: ${REALITY_PUBLIC_KEY}
@@ -496,7 +504,7 @@ ${link}
 常用检查命令:
 - 查看服务状态:
   $( [ "$INIT_SYSTEM" = "systemd" ] && printf 'systemctl status xray --no-pager' || printf 'rc-service xray status' )
-- 查看 443 监听:
+- 查看监听端口:
   ss -lntp | grep ':${LISTEN_PORT}'
 - 查看日志:
   $( [ "$INIT_SYSTEM" = "systemd" ] && printf 'journalctl -u xray -n 50 --no-pager' || printf 'tail -n 50 /var/log/xray/error.log' )
@@ -512,6 +520,9 @@ main() {
   check_system
   prompt_required NODE_NAME "节点名称（如 GF_US01）"
   prompt_required PUBLIC_HOST "对外连接地址（公网 IP 或域名，用于生成链接）"
+  if [ "$NON_INTERACTIVE" != "1" ] && [ -z "$PUBLIC_PORT" ]; then
+    read -r -p "对外映射端口（NAT 公网端口；直接回车则默认跟随本地监听端口 ${LISTEN_PORT}）: " PUBLIC_PORT
+  fi
   normalize_inputs
   check_port_conflict
   install_xray
