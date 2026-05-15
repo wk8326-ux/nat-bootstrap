@@ -252,6 +252,79 @@ check_port_conflict() {
   fail "端口 ${LISTEN_PORT} 被占用；可先手动处理，或加 --auto-disable-nginx / --force-stop-port-holder"
 }
 
+install_xray_openrc_manual() {
+  local version url tmp_dir zip_path extracted_bin
+  section "安装 Xray（OpenRC / Alpine 手动模式）"
+
+  version="$({ curl -fsSL https://api.github.com/repos/XTLS/Xray-core/releases/latest || wget -qO- https://api.github.com/repos/XTLS/Xray-core/releases/latest; } | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -n1)"
+  [ -n "$version" ] || fail "获取 Xray 最新版本失败"
+
+  case "$ARCH" in
+    amd64) url="https://github.com/XTLS/Xray-core/releases/download/${version}/Xray-linux-64.zip" ;;
+    arm64) url="https://github.com/XTLS/Xray-core/releases/download/${version}/Xray-linux-arm64-v8a.zip" ;;
+    armv7) url="https://github.com/XTLS/Xray-core/releases/download/${version}/Xray-linux-arm32-v7a.zip" ;;
+    *) fail "OpenRC 手动安装暂不支持架构: $ARCH" ;;
+  esac
+
+  tmp_dir="$(mktemp -d /tmp/xray-manual.XXXXXX)"
+  zip_path="${tmp_dir}/xray.zip"
+  info "下载版本: ${version}"
+  info "下载地址: ${url}"
+
+  if ! curl -fL "$url" -o "$zip_path"; then
+    run_root rm -rf "$tmp_dir"
+    fail "下载 Xray 安装包失败"
+  fi
+
+  run_root mkdir -p /usr/local/xray /usr/local/etc/xray /var/log/xray
+  run_root unzip -oq "$zip_path" -d "$tmp_dir"
+  extracted_bin="$(find "$tmp_dir" -type f -name xray | head -n1)"
+  [ -n "$extracted_bin" ] || {
+    run_root rm -rf "$tmp_dir"
+    fail "解压后未找到 xray 二进制"
+  }
+
+  run_root install -m 755 "$extracted_bin" /usr/local/xray/xray
+  run_root ln -sf /usr/local/xray/xray /usr/local/bin/xray
+
+  if [ -f "$tmp_dir/geoip.dat" ]; then
+    run_root install -m 644 "$tmp_dir/geoip.dat" /usr/local/share/xray/geoip.dat 2>/dev/null || {
+      run_root mkdir -p /usr/local/share/xray
+      run_root install -m 644 "$tmp_dir/geoip.dat" /usr/local/share/xray/geoip.dat
+    }
+  fi
+  if [ -f "$tmp_dir/geosite.dat" ]; then
+    run_root install -m 644 "$tmp_dir/geosite.dat" /usr/local/share/xray/geosite.dat 2>/dev/null || {
+      run_root mkdir -p /usr/local/share/xray
+      run_root install -m 644 "$tmp_dir/geosite.dat" /usr/local/share/xray/geosite.dat
+    }
+  fi
+
+  run_root tee /etc/init.d/xray >/dev/null <<'EOF'
+#!/sbin/openrc-run
+name="xray"
+description="Xray Service"
+command="/usr/local/xray/xray"
+command_args="run -config /usr/local/etc/xray/config.json"
+command_background="yes"
+pidfile="/run/${RC_SVCNAME}.pid"
+output_log="/var/log/xray/access.log"
+error_log="/var/log/xray/error.log"
+
+supervisor=supervise-daemon
+retry="TERM/10/KILL/5"
+
+depend() {
+  need net
+  after firewall
+}
+EOF
+  run_root chmod +x /etc/init.d/xray
+  run_root mkdir -p /var/log/xray /run
+  run_root rm -rf "$tmp_dir"
+  ok "OpenRC 手动安装完成"
+}
+
 install_xray() {
   section "安装 Xray"
   local need_install="1"
@@ -261,10 +334,14 @@ install_xray() {
     xray_bin="$(command -v xray)"
   fi
   if [ "$need_install" = "1" ]; then
-    local tmp_script
-    tmp_script="/tmp/install-release.sh"
-    curl -fsSL https://github.com/XTLS/Xray-install/raw/main/install-release.sh -o "$tmp_script"
-    run_root bash "$tmp_script" install
+    if [ "$INIT_SYSTEM" = "openrc" ]; then
+      install_xray_openrc_manual
+    else
+      local tmp_script
+      tmp_script="/tmp/install-release.sh"
+      curl -fsSL https://github.com/XTLS/Xray-install/raw/main/install-release.sh -o "$tmp_script"
+      run_root bash "$tmp_script" install
+    fi
   fi
   command -v xray >/dev/null 2>&1 || fail "Xray 安装后不可用"
   ok "Xray 就绪：$(xray version | head -n1)"

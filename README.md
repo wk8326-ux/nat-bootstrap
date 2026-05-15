@@ -44,16 +44,22 @@ Notes:
 
 ### 2) VLESS + Reality
 
+For lightweight NAT nodes that need direct `VLESS + Reality` on port `443`.
+
+Recommended on Alpine / BusyBox style systems: install `bash` and `curl` first, then download and run the script.
+
 Interactive:
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/wk8326-ux/nat-bootstrap/main/gf_vless_reality_install.sh)
+curl -fsSL -o gf_vless_reality_install.sh https://raw.githubusercontent.com/wk8326-ux/nat-bootstrap/main/gf_vless_reality_install.sh
+bash gf_vless_reality_install.sh
 ```
 
 Non-interactive:
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/wk8326-ux/nat-bootstrap/main/gf_vless_reality_install.sh) \
+curl -fsSL -o gf_vless_reality_install.sh https://raw.githubusercontent.com/wk8326-ux/nat-bootstrap/main/gf_vless_reality_install.sh
+bash gf_vless_reality_install.sh \
   --node-name GF_US01 \
   --public-host 1.2.3.4 \
   --listen-port 443 \
@@ -78,6 +84,8 @@ Prepare first:
 
 Important notes:
 
+- On `systemd` hosts, the script uses the upstream Xray installer.
+- On `Alpine + OpenRC`, it automatically switches to a manual Xray install path instead of `install-release.sh`.
 - `--public-host` is only used to generate the final import link. It does not create DNS records or port forwarding for you.
 - If the machine is NAT-based, the external mapped port must really reach the node's listening port. DNS alone cannot solve high-port NAT mapping.
 - This script installs only the local `VLESS + Reality` service. It does not set up reverse proxy, CDN, Cloudflare Tunnel, panel registration, or extra routing.
