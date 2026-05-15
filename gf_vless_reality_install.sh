@@ -159,6 +159,10 @@ install_base_packages() {
       pkg_install bash curl wget tar gzip unzip openssl ca-certificates tzdata iproute2 dnsutils
       ;;
   esac
+  hash -r
+  for cmd in bash curl openssl ss; do
+    command -v "$cmd" >/dev/null 2>&1 || fail "基础依赖安装后仍缺少命令: $cmd"
+  done
   ok "基础依赖已安装"
 }
 
