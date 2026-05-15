@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-SCRIPT_VERSION="0.1.0"
+SCRIPT_VERSION="0.1.1"
 XRAY_CONFIG="/usr/local/etc/xray/config.json"
 CF_ENV="/etc/default/cloudflared-nat-cfws"
 CF_SERVICE="cloudflared-nat-cfws"
@@ -48,12 +48,45 @@ proc_match() {
       ;;
     busybox)
       ps w | awk -v n="$needle" '
-        $0 ~ n {
+        NR > 1 && index($0, n) {
           pid=$1; comm=$5;
           args="";
           for (i=5;i<=NF;i++) args=args (i==5?"":" ") $i;
           printf "%s\t%s\t%s\n", pid, comm, args;
           found=1;
+        }
+        END { exit(found?0:1) }'
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+proc_comm_exact() {
+  name="$1"
+  case "$PS_MODE" in
+    full)
+      ps -eo pid=,comm=,args= | awk -v n="$name" '
+        $2 == n {
+          pid=$1; comm=$2;
+          args="";
+          for (i=3;i<=NF;i++) args=args (i==3?"":" ") $i;
+          printf "%s\t%s\t%s\n", pid, comm, args;
+          found=1;
+        }
+        END { exit(found?0:1) }'
+      ;;
+    busybox)
+      ps w | awk -v n="$name" '
+        NR > 1 {
+          comm=$5; gsub(/^.*\//, "", comm)
+          if (comm == n) {
+            pid=$1; args="";
+            for (i=5;i<=NF;i++) args=args (i==5?"":" ") $i;
+            printf "%s\t%s\t%s\n", pid, comm, args;
+            found=1;
+          }
         }
         END { exit(found?0:1) }'
       ;;
@@ -85,23 +118,43 @@ service_state() {
   fi
 }
 
+config_has() {
+  key="$1"
+  [ -f "$XRAY_CONFIG" ] || return 1
+  grep -q "$key" "$XRAY_CONFIG" 2>/dev/null
+}
+
 detect_mode() {
-  if [ -f "$CF_ENV" ] || proc_match "cloudflared tunnel run --token-file" >/dev/null 2>&1 || proc_match "$CF_SERVICE" >/dev/null 2>&1; then
-    echo cfws
-    return
-  fi
-  if [ -f "$XRAY_CONFIG" ] && grep -q 'realitySettings' "$XRAY_CONFIG" 2>/dev/null; then
+  if config_has 'realitySettings'; then
     echo reality
     return
   fi
-  if [ -f "$XRAY_CONFIG" ] && grep -q 'wsSettings' "$XRAY_CONFIG" 2>/dev/null; then
+  if config_has 'wsSettings'; then
+    echo cfws
+    return
+  fi
+  if [ -f "$CF_ENV" ] || proc_comm_exact cloudflared >/dev/null 2>&1 || proc_match 'cloudflared tunnel run --token-file' >/dev/null 2>&1; then
     echo cfws
     return
   fi
   echo unknown
 }
 
-show_proc_block() {
+show_block_from_cmd() {
+  title="$1"
+  name="$2"
+  section "$title"
+  if out="$(proc_comm_exact "$name" 2>/dev/null)" && [ -n "$out" ]; then
+    printf '%s\n' "$out" | while IFS='\t' read -r pid comm args; do
+      printf 'PID=%s COMM=%s\nCMD=%s\n\n' "$pid" "$comm" "$args"
+    done
+    return 0
+  fi
+  warn "未发现进程名: $name"
+  return 1
+}
+
+show_block_from_match() {
   title="$1"
   pattern="$2"
   section "$title"
@@ -115,6 +168,28 @@ show_proc_block() {
   return 1
 }
 
+parse_first_inbound_port() {
+  awk '
+    /"inbounds"/ {inb=1}
+    inb && /"port"/ {
+      line=$0
+      gsub(/[^0-9]/, "", line)
+      if (line != "") { print line; exit }
+    }
+  ' "$XRAY_CONFIG" 2>/dev/null || true
+}
+
+parse_ws_port() {
+  awk '
+    /"wsSettings"/ {ws=1}
+    ws && /"port"/ {
+      line=$0
+      gsub(/[^0-9]/, "", line)
+      if (line != "") { print line; exit }
+    }
+  ' "$XRAY_CONFIG" 2>/dev/null || true
+}
+
 check_reality() {
   section "部署类型：GF VLESS + Reality"
   info "判断依据: xray 配置含 realitySettings"
@@ -123,11 +198,11 @@ check_reality() {
   info "xray 服务状态: $state"
 
   alive=0
-  if show_proc_block "xray 进程" "$XRAY_SERVICE"; then
+  if show_block_from_cmd "xray 进程" xray; then
     alive=1
   fi
 
-  listen_port="$(awk -F: '/"port"/ {gsub(/[^0-9]/, "", $2); if ($2 != "") {print $2; exit}}' "$XRAY_CONFIG" 2>/dev/null || true)"
+  listen_port="$(parse_first_inbound_port)"
   if [ -n "$listen_port" ]; then
     section "监听检查"
     info "检测到本地监听端口: $listen_port"
@@ -152,7 +227,7 @@ check_reality() {
 
 check_cfws() {
   section "部署类型：CF Tunnel + VLESS WS"
-  info "判断依据: cloudflared 配置/进程，或 xray 配置含 wsSettings"
+  info "判断依据: xray 配置含 wsSettings，或存在 cloudflared 相关配置/进程"
 
   xray_ok=0
   cf_ok=0
@@ -160,19 +235,16 @@ check_cfws() {
   info "xray 服务状态: $(service_state "$XRAY_SERVICE")"
   info "cloudflared 服务状态: $(service_state "$CF_SERVICE")"
 
-  if show_proc_block "xray 进程" "$XRAY_SERVICE"; then
+  if show_block_from_cmd "xray 进程" xray; then
     xray_ok=1
   fi
-  if show_proc_block "cloudflared 进程" "cloudflared tunnel run --token-file"; then
+  if show_block_from_cmd "cloudflared 进程" cloudflared; then
     cf_ok=1
-  elif show_proc_block "cloudflared 进程（服务名回退）" "$CF_SERVICE"; then
+  elif show_block_from_match "cloudflared 进程（命令匹配回退）" 'cloudflared tunnel run --token-file'; then
     cf_ok=1
   fi
 
-  ws_port="$(awk '
-    /"wsSettings"/ {flag=1}
-    flag && /"port"/ {gsub(/[^0-9]/, "", $2); if ($2 != "") {print $2; exit}}
-  ' "$XRAY_CONFIG" 2>/dev/null || true)"
+  ws_port="$(parse_ws_port)"
   [ -n "$ws_port" ] || ws_port="8080"
 
   section "监听检查"
