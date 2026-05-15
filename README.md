@@ -2,7 +2,9 @@
 
 Public bootstrap scripts for NAT and lightweight nodes.
 
-## One-line install
+## Scripts
+
+### 1) Cloudflare Tunnel + VLESS WS
 
 Interactive:
 
@@ -13,15 +15,91 @@ bash <(curl -fsSL https://raw.githubusercontent.com/wk8326-ux/nat-bootstrap/main
 Non-interactive:
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/wk8326-ux/nat-bootstrap/main/cf_vless_ws_install.sh) --node-name NAT_HKCF --host hkcf.holdzywoo.top --token 'YOUR_CF_TUNNEL_TOKEN' --non-interactive
+bash <(curl -fsSL https://raw.githubusercontent.com/wk8326-ux/nat-bootstrap/main/cf_vless_ws_install.sh) \
+  --node-name NAT_HKCF \
+  --host hkcf.holdzywoo.top \
+  --token 'YOUR_CF_TUNNEL_TOKEN' \
+  --non-interactive
 ```
 
-## What it installs
+What it installs:
 
 - xray
 - cloudflared
 - VLESS + WS
 - Cloudflare Tunnel outbound connection
+
+Prepare first:
+
+- a working domain hostname
+- a Cloudflare Tunnel
+- the Tunnel Token
+- hostname routing in Cloudflare pointing to this node service
+
+Notes:
+
+- This script targets the `CF Tunnel -> cloudflared -> local xray(ws)` path.
+- The Tunnel Token file/content must be the raw `eyJ...` token only.
+- Best suited for NAT/lightweight nodes that cannot expose standard public web ports directly.
+
+### 2) VLESS + Reality
+
+Interactive:
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/wk8326-ux/nat-bootstrap/main/gf_vless_reality_install.sh)
+```
+
+Non-interactive:
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/wk8326-ux/nat-bootstrap/main/gf_vless_reality_install.sh) \
+  --node-name GF_US01 \
+  --public-host 1.2.3.4 \
+  --listen-port 443 \
+  --dest www.cloudflare.com:443 \
+  --server-name www.cloudflare.com \
+  --non-interactive
+```
+
+What it installs:
+
+- xray
+- VLESS + Reality inbound
+- auto-generated UUID / Reality key pair / shortId when not provided
+- service autostart via systemd or OpenRC
+
+Prepare first:
+
+- a node with a reachable public IP or usable external port mapping
+- a confirmed external entry address for client import (`--public-host`)
+- a free listening port on the node (default `443`)
+- a valid Reality target pair: `--dest HOST:PORT` and matching `--server-name HOST`
+
+Important notes:
+
+- `--public-host` is only used to generate the final import link. It does not create DNS records or port forwarding for you.
+- If the machine is NAT-based, the external mapped port must really reach the node's listening port. DNS alone cannot solve high-port NAT mapping.
+- This script installs only the local `VLESS + Reality` service. It does not set up reverse proxy, CDN, Cloudflare Tunnel, panel registration, or extra routing.
+- Port conflict handling is intentionally simple:
+  - `--auto-disable-nginx`: stop + disable nginx if nginx is occupying the target port
+  - `--force-stop-port-holder`: try stopping the service occupying the target port
+- Recommended default test path is direct public-IP import first, then move on to your own domain/entry planning after the node is verified.
+- This Reality path has not been broadly field-tested yet. Treat it as a convenience bootstrap script, verify carefully on each new node, and prefer small-step validation before wider reuse.
+
+Typical use cases:
+
+- a public VPS that can listen on `443` directly
+- a NAT node whose provider gives a stable external port mapping and you plan to import the generated link manually
+- quick personal deployment where you want a minimal local Reality service first and will handle the surrounding infra yourself
+
+Not covered by this script:
+
+- Cloudflare-related setup
+- domain DNS management
+- security group / firewall opening
+- panel / probe / agent registration
+- multi-node orchestration
 
 ## Other tools
 
@@ -56,11 +134,3 @@ Features:
 - explain common proxy / probe / script processes in plain Chinese
 - choose indexes to send `SIGTERM` or `SIGKILL`
 - suitable for spotting retry leftovers or useless resident tasks on tiny NAT nodes
-
-
-Prepare first:
-
-- a working domain hostname
-- a Cloudflare Tunnel
-- the Tunnel Token
-- hostname routing in Cloudflare pointing to this node service
