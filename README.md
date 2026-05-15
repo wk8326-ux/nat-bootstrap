@@ -113,7 +113,35 @@ Not covered by this script:
 
 ## Other tools
 
-Interactive process inspector / killer for NAT or lightweight VPS:
+### Node alive checker
+
+Detects which of the two bootstrap deployment styles is present, then checks whether the expected processes really exist.
+
+Supported modes:
+
+- `GF VLESS + Reality`
+- `CF Tunnel + VLESS WS`
+
+Run directly:
+
+```bash
+curl -fsSL -o node_alive_check.sh https://raw.githubusercontent.com/wk8326-ux/nat-bootstrap/main/node_alive_check.sh
+sh node_alive_check.sh
+```
+
+What it checks:
+
+- deployment type detection first
+- whether `xray` is really running
+- for CFWS mode, whether `cloudflared` is really running too
+- whether the expected local listening port still exists
+
+Notes:
+
+- This is a local process / listener health check, not an external reachability test.
+- If a process is present but external access still fails, continue checking NAT mapping, tunnel state, firewall, and upstream entry path.
+
+### Interactive process inspector / killer for NAT or lightweight VPS
 
 Recommended lightweight shell version:
 
